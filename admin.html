@@ -14,17 +14,19 @@ h1{font-size:20px;font-weight:800}h2{font-size:16px;font-weight:800}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 label{font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:5px}
-input{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:#0e1b15;color:var(--ink)}
+input,textarea{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid var(--line);background:#0e1b15;color:var(--ink)}
 button{font:inherit;font-weight:800;border:0;border-radius:12px;padding:12px;font-size:14px;cursor:pointer}
 button:disabled{opacity:.4}
 .b1{background:var(--gold);color:#2a2100}.b2{background:#1d3a2c;color:var(--ok)}.b3{background:none;color:var(--mute)}
-button:focus-visible,input:focus-visible{outline:3px solid #fff;outline-offset:2px}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #fff;outline-offset:2px}
 .mono{font-family:var(--mono);font-weight:700}.gold{color:var(--gold)}.note{color:var(--mute);font-size:12px}
 .err{color:var(--bad);font-size:13px;font-weight:700}.okm{color:var(--ok);font-size:13px;font-weight:700}
 .u{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:8px}
 #ptl,#lista{max-height:360px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;display:flex;flex-direction:column;gap:10px;padding-right:4px;border-bottom:1px solid var(--line)}
 #ptl>*,#lista>*{flex:none}
 .mv{display:flex;justify-content:space-between;font-size:13px;gap:8px}
+textarea{min-height:90px;resize:vertical}
+.pv{width:100%;border-radius:12px;display:block}
 </style>
 </head>
 <body>
@@ -45,10 +47,10 @@ const app=initializeApp({
 const auth=getAuth(app),db=getFirestore(app),A=document.getElementById('app');
 const fmt=n=>'$'+Math.round(n).toLocaleString('es-AR');
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let U=null,me=null,cfg={comision:10,entradas:[500,1000,2000],turno:20,espera:40,reenganche:0,segReeng:20,whatsapp:''},us=[],mv=[],fx=[],fxOk=false,rk=[],q='',err='',ok='',unsubs=[];
+let U=null,me=null,cfg={comision:10,entradas:[500,1000,2000],turno:20,espera:40,reenganche:0,segReeng:20,whatsapp:''},us=[],mv=[],fx=[],fxOk=false,rk=[],q='',err='',ok='',unsubs=[],anu=[],anuTxt='',bn={},bnPend='',bnLink=null,bnMsg={t:'',bad:false},anMsg={t:'',bad:false};
 
 onAuthStateChanged(auth,u=>{
-  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;us=[];mv=[];fx=[];fxOk=false;rk=[];pd=[];
+  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;us=[];mv=[];fx=[];fxOk=false;rk=[];pd=[];anu=[];bn={};bnPend='';bnLink=null;
   if(u){
     unsubs.push(onSnapshot(doc(db,'users',u.uid),s=>{
       const was=me&&me.admin;me=s.exists()?s.data():null;
@@ -57,6 +59,8 @@ onAuthStateChanged(auth,u=>{
         unsubs.push(onSnapshot(query(collection(db,'movimientos'),orderBy('creado','desc'),limit(15)),s=>{mv=s.docs.map(d=>d.data());hist()}));
         unsubs.push(onSnapshot(doc(db,'config','general'),s=>{if(s.exists())cfg={...cfg,...s.data()};view()}));
         unsubs.push(onSnapshot(query(collection(db,'mesas'),where('estado','==','esperando')),s=>{fx=s.docs.map(d=>({id:d.id,...d.data()}));if(!fxOk){fxOk=true;view()}else estados()}));
+        unsubs.push(onSnapshot(doc(db,'config','anuncios'),s=>{anu=s.exists()&&Array.isArray(s.data().items)?s.data().items:[];view()}));
+        unsubs.push(onSnapshot(doc(db,'config','banner'),s=>{bn=s.exists()?s.data():{};view()}));
         unsubs.push(onSnapshot(collection(db,'ranking'),s=>{rk=s.docs.map(d=>({id:d.id,...d.data()}));rkv()}));
         unsubs.push(()=>{if(unPart)unPart();unPart=null});subPartidas();
       }
@@ -77,13 +81,15 @@ function view(){
     <label>Segundos de espera entre manos (10 a 120)<input name="esp" type="number" min="10" max="120" step="1" value="${cfg.espera||40}"></label>
     <label>Segundos para reengancharse (5 a 120)<input name="sre" type="number" min="5" max="120" step="1" value="${cfg.segReeng||20}"></label>
     <label>Costo del reenganche (0 = igual a la entrada de cada mesa)<input name="ree" type="number" min="0" max="100000" step="1" value="${cfg.reenganche||0}"></label>
+    <label>Minutos para limpiar la mesa principal si queda una sola persona sin actividad (1 a 60)<input name="lim" type="number" min="1" max="60" step="1" value="${cfg.limpieza||5}"></label>
     <label>Entradas permitidas (separadas por coma)<input name="ent" value="${cfg.entradas.join(', ')}"></label>
     <label>WhatsApp para cargas (solo números, con código de país. Ej: 5493815551234)<input name="wa" inputmode="numeric" value="${esc(cfg.whatsapp||'')}"></label>
     ${err?`<div class="err">${err}</div>`:''}${ok?`<div class="okm">${ok}</div>`:''}
     <button class="b1">Guardar configuración</button></form>
   ${fijasHTML()}
   ${pruebaCard()}
-  ${progCard()}
+  ${anunciosCard()}
+  ${bannerCard()}
   ${partidasCard()}
   ${rankCard()}
   <div class="card"><h2>Jugadores</h2><div class="note" id="cont"></div><input id="q" placeholder="Buscar por nombre o código" value="${esc(q)}" aria-label="Buscar jugador"><div id="lista"></div></div>
@@ -98,44 +104,21 @@ function tabla(){
 }
 const pc=x=>Math.round(x.g*100/x.j)+'%';
 function fijasHTML(){
-  return `<form class="card" id="mf"><h2>Mesa principal</h2><p class="note">Mesa de hasta 4 jugadores, siempre disponible. Empieza sola con una cuenta de 20 segundos (si se suma alguien, la cuenta vuelve a empezar) y se vuelve a abrir vacía. Para cambiar la entrada o los puntos, tiene que estar sin jugadores.</p>`
+  return `<form class="card" id="mf"><h2>Mesa principal</h2><p class="note">Mesa de hasta 6 jugadores, siempre disponible. Empieza sola con una cuenta de 20 segundos (si se suma alguien, la cuenta vuelve a empezar) y se vuelve a abrir vacía. Si queda una sola persona sin actividad, se limpia a los minutos que pongas en Configuración (ahora: ${cfg.limpieza||5}). Para cambiar la entrada o los puntos, tiene que estar sin jugadores.</p>`
   +FIJAS.map(([n,nom])=>{const m=fx.find(x=>x.id==='mesa-'+n),en=m?m.entrada:(cfg.entradas[0]||0),li=m?m.limite:100;
-    return `<div class="u"><div class="row"><b>${nom}</b><span id="st-${n}" class="note"></span></div>
+    return `<div class="u"><div class="row"><b>${nom}</b><span id="st-${n}" class="note"></span></div>${m&&m.max!==6?`<div class="err">La mesa todavía es de ${m.max} jugadores. Con la mesa vacía, tocá el botón de abajo (Crear / guardar) para pasarla a 6.</div>`:''}
     <div class="row"><label style="flex:1">Entrada (0 = gratis)<input name="e${n}" type="number" min="0" max="100000" step="1" value="${en}"></label>
     <label style="flex:1">Puntos para eliminar<input name="l${n}" type="number" min="20" max="500" step="10" value="${li}"></label></div></div>`}).join('')
   +(fm.t?`<div class="${fm.bad?'err':'okm'}">${esc(fm.t)}</div>`:'')
   +`<div id="viejas"></div><button class="b1">Crear / guardar la mesa principal</button></form>`;
 }
-let pm={t:'',bad:false};
-function progCard(){
-  const m=fx.find(x=>x.id==='mesa-prog'),en=m?m.entrada:(cfg.entradas[0]||0),li=m?m.limite:100,mx=m?m.max:4;
-  return `<form class="card" id="pf"><h2>Partida programada</h2><p class="note">Los jugadores se suscriben pagando la entrada y pueden cancelar su suscripción antes de que arranque (se les devuelve la entrada). Vos también podés cancelar la partida (se devuelven las entradas a todos). Arranca a la hora indicada si hay 2 o más suscriptos; si hay menos, arranca apenas se suscriba el segundo.</p>
-  <div id="pgs"></div>
-  <label>Fecha y hora de inicio<input name="ini" type="datetime-local" required></label>
-  <div class="row"><label style="flex:1">Entrada (0 = gratis)<input name="ep" type="number" min="0" max="100000" step="1" value="${en}"></label>
-  <label style="flex:1">Puntos para eliminar<input name="lp" type="number" min="20" max="500" step="10" value="${li}"></label></div>
-  <label>Máximo de jugadores (2 a 6)<input name="mp" type="number" min="2" max="6" step="1" value="${mx}"></label>
-  ${pm.t?`<div class="${pm.bad?'err':'okm'}">${esc(pm.t)}</div>`:''}
-  <button class="b1">Programar partida</button></form>`;
-}
-function progv(){
-  const el=document.getElementById('pgs');if(!el)return;
-  const m=fx.find(x=>x.id==='mesa-prog');
-  if(!m||!m.inicio||!m.inicio.toDate){el.innerHTML='<p class="note">No hay ninguna partida programada.</p>';return}
-  const cuando=m.inicio.toDate().toLocaleString('es-AR',{weekday:'long',day:'2-digit',month:'long',hour:'2-digit',minute:'2-digit'});
-  el.innerHTML=`<div class="u"><div class="row"><b>Programada: ${esc(cuando)}</b><span class="mono gold">${m.uids.length}/${m.max}</span></div>
-  <span class="note">Entrada ${fmt(m.entrada)} · pozo ${fmt(m.pozo||0)} · ${m.limite} puntos</span>
-  <span class="note">Suscriptos: ${(m.jugadores||[]).map(j=>esc(j.name)).join(', ')||'nadie todavía'}</span>
-  <button type="button" class="b2" style="color:var(--bad)" data-a="progcancel">Cancelar partida programada${m.entrada>0&&m.uids.length?' y devolver entradas':''}</button></div>`;
-}
 function estados(){
-  progv();
   FIJAS.forEach(([n])=>{const el=document.getElementById('st-'+n);if(!el)return;
     const m=fx.find(x=>x.id==='mesa-'+n);
     el.innerHTML=m?`${m.uids.length}/${m.max} sentados${m.uids.length?` <button type="button" class="b3" style="padding:4px 8px;color:var(--bad)" data-a="vaciar" data-id="${m.id}">Vaciar</button>`:''}`:'Sin crear';
   });
   const v=document.getElementById('viejas');
-  if(v){const o=fx.filter(m=>!/^mesa-(4|prog)$/.test(m.id));
+  if(v){const o=fx.filter(m=>!/^mesa-4$/.test(m.id));
     v.innerHTML=o.length?`<p class="note">Hay ${o.length} mesa(s) vieja(s) abierta(s).</p><button type="button" class="b2" data-a="viejas">Borrar mesas viejas</button>`:''}
 }
 async function guardarFijas(f){
@@ -145,7 +128,7 @@ async function guardarFijas(f){
     if(!(entrada>=0&&entrada<=100000)||!(limite>=20&&limite<=500)){fm={t:'Revisá la entrada (0 a 100000) y los puntos para eliminar (20 a 500).',bad:true};return view()}
     const ex=fx.find(x=>x.id==='mesa-'+n);
     if(ex&&ex.uids.length){bloq.push(nom);continue}
-    w.set(doc(db,'mesas','mesa-'+n),{nombre:nom,entrada,max:n,limite,listos:[],reeng:entrada===0?0:(cfg.reenganche>0?cfg.reenganche:entrada),pozo:0,fija:true,prog:false,anfitrion:'',cuentaIni:serverTimestamp(),estado:'esperando',uids:[],jugadores:[],creada:serverTimestamp()});
+    w.set(doc(db,'mesas','mesa-'+n),{nombre:nom,entrada,max:6,limite,listos:[],reeng:entrada===0?0:(cfg.reenganche>0?cfg.reenganche:entrada),pozo:0,fija:true,prog:false,anfitrion:'',cuentaIni:serverTimestamp(),estado:'esperando',uids:[],jugadores:[],creada:serverTimestamp()});
     hubo++;
   }
   try{if(hubo)await w.commit();fm={t:'Mesas guardadas.'+(bloq.length?' No se cambió: '+bloq.join(', ')+' (tiene jugadores sentados).':''),bad:false}}
@@ -229,18 +212,76 @@ async function dibujarDia(){
 function pruebaCard(){
   return `<div class="card"><h2>Mesa de prueba (bot)</h2><p class="note">Una mesa aparte, gratis, donde el usuario juega contra un bot. No usa saldo ni suma al ranking.</p><div class="row"><b>${cfg.prueba?'ACTIVADA':'DESACTIVADA'}</b><button type="button" class="${cfg.prueba?'b2':'b1'}" data-a="prueba">${cfg.prueba?'Desactivar':'Activar'}</button></div></div>`;
 }
-async function guardarProg(f){
-  const ex=fx.find(x=>x.id==='mesa-prog');
-  if(ex&&ex.uids.length){pm={t:'Hay jugadores suscriptos. Cancelá la partida programada antes de programar otra.',bad:true};return view()}
-  const ini=new Date(f.get('ini')),entrada=Math.floor(+f.get('ep')),limite=Math.floor(+f.get('lp')),max=Math.floor(+f.get('mp'));
-  if(isNaN(ini.getTime())||ini.getTime()<Date.now()+60000){pm={t:'Elegí una fecha y hora futura (al menos 1 minuto desde ahora).',bad:true};return view()}
-  if(!(entrada>=0&&entrada<=100000)||!(limite>=20&&limite<=500)||!(max>=2&&max<=6)){pm={t:'Revisá la entrada (0 a 100000), los puntos (20 a 500) y los jugadores (2 a 6).',bad:true};return view()}
-  try{
-    await setDoc(doc(db,'mesas','mesa-prog'),{nombre:'Partida programada',entrada,max,limite,listos:[],reeng:entrada===0?0:(cfg.reenganche>0?cfg.reenganche:entrada),pozo:0,fija:true,prog:true,anfitrion:'',cuentaIni:serverTimestamp(),inicio:ini,estado:'esperando',uids:[],jugadores:[],creada:serverTimestamp()});
-    pm={t:'Partida programada.',bad:false};
-  }catch(x){pm={t:'No se pudo guardar. Revisá que hayas publicado las reglas nuevas de Firestore.',bad:true}}
+
+/* ---------- Anuncios (mensajes para los jugadores) ---------- */
+function anunciosCard(){
+  const l=anu.slice().sort((a,b)=>(b.f||0)-(a.f||0));
+  return `<form class="card" id="anf"><h2>Anuncios y mensajes</h2><p class="note">Lo que escribas acá aparece en el inicio de los jugadores, debajo de la mesa principal. Podés tener hasta 10 anuncios; borrá los que ya no sirvan.</p>
+  <label>Nuevo mensaje (hasta 300 letras)<textarea id="anu-t" maxlength="300" placeholder="Ej: Hoy sorteo a las 21 hs. ¡Los esperamos!">${esc(anuTxt)}</textarea></label>
+  ${anMsg.t?`<div class="${anMsg.bad?'err':'okm'}">${esc(anMsg.t)}</div>`:''}
+  <button class="b1">Publicar anuncio</button>
+  ${l.length?l.map(a=>`<div class="u"><div style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px">${esc(a.t||'')}</div><div class="row"><span class="note">${a.f?new Date(a.f).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'}):''}</span><button type="button" class="b3" style="color:var(--bad)" data-a="anudel" data-id="${esc(a.id)}">Borrar</button></div></div>`).join(''):'<p class="note">Todavía no hay anuncios publicados.</p>'}</form>`;
+}
+async function publicarAnuncio(){
+  const t=anuTxt.trim();
+  if(!t){anMsg={t:'Escribí el mensaje antes de publicar.',bad:true};return view()}
+  if(anu.length>=10){anMsg={t:'Ya hay 10 anuncios. Borrá alguno para publicar otro.',bad:true};return view()}
+  const items=[...anu,{id:Date.now().toString(36)+Math.random().toString(36).slice(2,5),t:t.slice(0,300),f:Date.now()}];
+  try{await setDoc(doc(db,'config','anuncios'),{items});anuTxt='';anMsg={t:'Anuncio publicado.',bad:false}}
+  catch(x){anMsg={t:'No se pudo publicar. Revisá que hayas pegado las reglas nuevas de Firebase.',bad:true}}
   view();
 }
+
+/* ---------- Banner del inicio ---------- */
+function bannerCard(){
+  const img=bnPend||bn.img||'',link=bnLink===null?(bn.link||''):bnLink,on=bn.activo===true;
+  return `<form class="card" id="bnf"><h2>Banner del inicio</h2><p class="note">Se muestra al final del inicio de los jugadores. Elegí una imagen de tu galería (se achica sola) y, si querés, un link al que lleve al tocarla.</p>
+  ${bn.img?`<div class="row"><b>${on?'ACTIVADO (se está viendo)':'DESACTIVADO (no se ve)'}</b><button type="button" class="${on?'b2':'b1'}" data-a="bnact">${on?'Desactivar':'Activar'}</button></div>`:''}
+  ${img?`<img class="pv" src="${esc(img)}" alt="Vista previa del banner">${bnPend?'<p class="note">Imagen nueva elegida: todavía no está guardada.</p>':''}`:'<p class="note">Todavía no hay imagen.</p>'}
+  <label>Imagen<input id="bn-file" type="file" accept="image/*"></label>
+  <label>Link al tocar el banner (opcional, ej: https://wa.me/549...)<input id="bn-link" inputmode="url" placeholder="https://" value="${esc(link)}"></label>
+  ${bnMsg.t?`<div class="${bnMsg.bad?'err':'okm'}">${esc(bnMsg.t)}</div>`:''}
+  <button class="b1">Guardar banner</button>
+  ${bn.img?'<button type="button" class="b3" style="color:var(--bad)" data-a="bnquitar">Quitar el banner</button>':''}</form>`;
+}
+function comprimir(file){
+  return new Promise((res,rej)=>{
+    const im=new Image(),u=URL.createObjectURL(file);
+    im.onload=()=>{
+      URL.revokeObjectURL(u);let w=Math.min(1000,im.width),q=.8,out='';
+      for(let i=0;i<8;i++){
+        const h=Math.max(1,Math.round(im.height*w/im.width)),c=document.createElement('canvas');c.width=w;c.height=h;
+        const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0,w,h);
+        out=c.toDataURL('image/jpeg',q);if(out.length<=600000)break;q=Math.max(.5,q-.1);w=Math.round(w*.8);
+      }
+      out.length<=600000?res(out):rej(new Error('grande'));
+    };
+    im.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('img'))};
+    im.src=u;
+  });
+}
+async function guardarBanner(){
+  const img=bnPend||bn.img||'';
+  if(!img){bnMsg={t:'Elegí una imagen primero.',bad:true};return view()}
+  let link=(bnLink===null?(bn.link||''):bnLink).trim();
+  if(link&&!/^https?:\/\//i.test(link))link='https://'+link;
+  if(link&&!/^https?:\/\/[^\s]+\.[^\s]+/i.test(link)){bnMsg={t:'El link no parece válido. Tiene que ser algo como https://wa.me/549...',bad:true};return view()}
+  try{
+    await setDoc(doc(db,'config','banner'),{img,link,activo:bn.activo===undefined?true:bn.activo===true,actualizado:serverTimestamp()});
+    bnPend='';bnLink=null;bnMsg={t:'Banner guardado.',bad:false};
+  }catch(x){bnMsg={t:'No se pudo guardar. Revisá que hayas pegado las reglas nuevas de Firebase.',bad:true}}
+  view();
+}
+document.addEventListener('change',async e=>{
+  if(e.target.id!=='bn-file'||!e.target.files||!e.target.files[0])return;
+  try{bnPend=await comprimir(e.target.files[0]);bnMsg={t:'Imagen lista. Tocá "Guardar banner" para publicarla.',bad:false}}
+  catch(x){bnMsg={t:'No se pudo usar esa imagen. Probá con otra.',bad:true}}
+  view();
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='anu-t')anuTxt=e.target.value;
+  if(e.target.id==='bn-link')bnLink=e.target.value;
+});
 async function accion(a,b){
   if(a==='limpiar'){
     if(!rk.length){alert('El ranking ya está vacío.');return}
@@ -251,16 +292,21 @@ async function accion(a,b){
     catch(x){alert('No se pudo limpiar el ranking. ¿Publicaste las reglas nuevas?')}
     b.disabled=false;return;
   }
-  if(a==='progcancel'){
-    const m=fx.find(x=>x.id==='mesa-prog');if(!m)return;
-    if(!confirm('¿Cancelar la partida programada?'+(m.entrada>0&&m.uids.length?' Se devuelve la entrada ('+fmt(m.entrada)+') a cada suscripto.':'')))return;
+  if(a==='anudel'){
+    if(!confirm('¿Borrar este anuncio?'))return;
     b.disabled=true;
-    try{
-      const w=writeBatch(db);
-      w.update(doc(db,'mesas','mesa-prog'),{uids:[],jugadores:[],pozo:0,listos:[],cuentaIni:serverTimestamp(),inicio:null});
-      if(m.entrada>0)m.uids.forEach(u=>w.update(doc(db,'users',u),{saldo:increment(m.entrada)}));
-      await w.commit();
-    }catch(x){alert('No se pudo cancelar.');b.disabled=false}
+    try{await setDoc(doc(db,'config','anuncios'),{items:anu.filter(x=>x.id!==b.dataset.id)})}catch(x){alert('No se pudo borrar.');b.disabled=false}
+    return;
+  }
+  if(a==='bnact'){
+    b.disabled=true;
+    try{await setDoc(doc(db,'config','banner'),{activo:bn.activo!==true},{merge:true})}catch(x){alert('No se pudo cambiar.');b.disabled=false}
+    return;
+  }
+  if(a==='bnquitar'){
+    if(!confirm('¿Quitar el banner? Se borra la imagen y el link.'))return;
+    b.disabled=true;
+    try{await setDoc(doc(db,'config','banner'),{img:'',link:'',activo:false,actualizado:serverTimestamp()});bnPend='';bnLink=null;bnMsg={t:'',bad:false}}catch(x){alert('No se pudo quitar.');b.disabled=false}
     return;
   }
   if(a==='prueba'){b.disabled=true;try{await setDoc(doc(db,'config','general'),{prueba:!cfg.prueba},{merge:true})}catch(x){alert('No se pudo cambiar.')}b.disabled=false;return}
@@ -310,7 +356,7 @@ async function accion(a,b){
     return;
   }
   if(a==='viejas'){
-    const l=fx.filter(m=>!/^mesa-(4|prog)$/.test(m.id));if(!l.length)return;
+    const l=fx.filter(m=>!/^mesa-4$/.test(m.id));if(!l.length)return;
     if(!confirm('¿Borrar '+l.length+' mesa(s) vieja(s)? Se devuelven las entradas a quienes estén sentados.'))return;
     b.disabled=true;
     try{
@@ -365,14 +411,15 @@ document.addEventListener('input',e=>{if(e.target.id==='q'){q=e.target.value;lis
 document.addEventListener('submit',async e=>{
   e.preventDefault();const f=new FormData(e.target);err='';ok='';
   if(e.target.id==='mf')return guardarFijas(f);
-  if(e.target.id==='pf')return guardarProg(f);
+  if(e.target.id==='anf')return publicarAnuncio();
+  if(e.target.id==='bnf')return guardarBanner();
   try{
     if(e.target.id==='f')await signInWithEmailAndPassword(auth,f.get('email'),f.get('pass'));
     if(e.target.id==='cf'){
       const comision=Math.floor(+f.get('com')),entradas=[...new Set(String(f.get('ent')).split(',').map(x=>Math.floor(+x.trim())).filter(n=>n>0))].slice(0,6);
-      const turno=Math.floor(+f.get('tur')),espera=Math.floor(+f.get('esp')),reenganche=Math.floor(+f.get('ree')),segReeng=Math.floor(+f.get('sre'));
-      if(!(comision>=0&&comision<=50)||!entradas.length||!(turno>=10&&turno<=120)||!(espera>=10&&espera<=120)||!(reenganche>=0&&reenganche<=100000)||!(segReeng>=5&&segReeng<=120)){err='Revisá la comisión (0 a 50), los segundos de turno y de espera (10 a 120), el reenganche (costo y segundos) y las entradas.';return view()}
-      await setDoc(doc(db,'config','general'),{prueba:!!cfg.prueba,comision,entradas,turno,espera,reenganche,segReeng,whatsapp:String(f.get('wa')).replace(/\D/g,'')});
+      const turno=Math.floor(+f.get('tur')),espera=Math.floor(+f.get('esp')),reenganche=Math.floor(+f.get('ree')),segReeng=Math.floor(+f.get('sre')),limpieza=Math.floor(+f.get('lim'));
+      if(!(comision>=0&&comision<=50)||!entradas.length||!(turno>=10&&turno<=120)||!(espera>=10&&espera<=120)||!(reenganche>=0&&reenganche<=100000)||!(segReeng>=5&&segReeng<=120)||!(limpieza>=1&&limpieza<=60)){err='Revisá la comisión (0 a 50), los segundos de turno y de espera (10 a 120), el reenganche (costo y segundos), los minutos de limpieza (1 a 60) y las entradas.';return view()}
+      await setDoc(doc(db,'config','general'),{prueba:!!cfg.prueba,comision,entradas,turno,espera,reenganche,segReeng,limpieza,whatsapp:String(f.get('wa')).replace(/\D/g,'')});
       ok='Configuración guardada.';view();
     }
   }catch(x){err=x.code==='auth/invalid-credential'?'Correo o contraseña incorrectos.':'No se pudo completar. Probá de nuevo.';view()}
@@ -380,7 +427,7 @@ document.addEventListener('submit',async e=>{
 document.addEventListener('click',async e=>{
   const b=e.target.closest('[data-a]');if(!b)return;const a=b.dataset.a;
   if(a==='salir')return signOut(auth);
-  if(['png','share','pngdia','sharedia','vaciar','viejas','prueba','limpiar','progcancel'].includes(a))return accion(a,b);
+  if(['png','share','pngdia','sharedia','vaciar','viejas','prueba','limpiar','anudel','bnact','bnquitar'].includes(a))return accion(a,b);
   if(a==='blq'||a==='del'){
     const u=us.find(x=>x.id===b.dataset.u);if(!u||u.admin)return;
     if(a==='blq'){

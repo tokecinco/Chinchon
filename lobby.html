@@ -99,6 +99,11 @@ a.b1{text-decoration:none;text-align:center;display:block;border-radius:14px;pad
 .prb .tx{font-size:13px;color:var(--ink)}.prb .tx small{display:block;color:var(--mute);font-size:12px;margin-top:2px}
 .prb .cta{grid-column:1/3}
 @media (prefers-reduced-motion:reduce){.prog .cdn{animation:none}}
+.anu{background:#15271e;border:1px solid #2f6b45;border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.anu .at{font-weight:800;font-size:14px;color:var(--gold);letter-spacing:.4px}
+.anu .ai{border-top:1px solid var(--line);padding-top:8px;font-size:14px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
+.anu .ai:first-of-type{border-top:0;padding-top:0}.anu .ai small{display:block;color:var(--mute);font-size:11px;margin-top:2px}
+.ban{margin-top:4px}.ban a{display:block}
 </style>
 </head>
 <body>
@@ -254,8 +259,7 @@ async function registrarStats(id){
     });
   }catch(e){}
 }
-const CUENTA=20,CUENTA_PROG=15,CONFIRMA=15;
-const REV_VENTANA=120,REV_ESPERA=60;
+const CUENTA=20,CONFIRMA=15;
 const cuenta=m=>{const t=m.cuentaIni&&m.cuentaIni.toMillis?m.cuentaIni.toMillis():0;if(!t)return 999;const seg=CUENTA;return Math.ceil((t+seg*1000-Date.now())/1000)};
 /* ---------- Mesa principal: al terminar la cuenta regresiva cada jugador confirma si juega; solo juegan los que confirman ---------- */
 const fasePrincipal=m=>{
@@ -302,8 +306,6 @@ setInterval(()=>{
 },1000);
 let dej=new Set();try{dej=new Set(JSON.parse(localStorage.getItem('dej')||'[]'))}catch(e){}
 const buscarMia=()=>{const l=mesas.filter(m=>m.uids.includes(U.uid)&&!dej.has(m.id)&&!(m.prog&&m.estado==='esperando'));const pend=m=>m.g&&m.g.ganador===U.uid&&!m.g.pagado,run=m=>m.estado==='jugando'&&!(m.g&&m.g.ganador);return l.find(pend)||l.find(run)||l.find(m=>m.estado==='jugando')||l[0]||null};
-const progMesa=()=>mesas.find(m=>m.id==='mesa-prog'&&m.estado==='esperando')||null;
-const bloqueaPrincipal=()=>{const p=progMesa();return !!(p&&p.inicio&&p.uids.includes(U.uid)&&p.inicio.toMillis()<=Date.now()+15*60000)};
 const dur=s=>{const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60,p=n=>String(n).padStart(2,'0');return (d?d+'d ':'')+p(h)+':'+p(m)+':'+p(x)};
 function dejar(id){dej.add(id);try{localStorage.setItem('dej',JSON.stringify([...dej].slice(-30)))}catch(e){}mia=buscarMia();sel=null;err='';view()}
 /* Registro de partidas del día (lo lee el panel de administrador) */
@@ -322,68 +324,7 @@ async function registrarLog(id){
     });
   }catch(e){}
 }
-/* ---------- Revancha de la partida programada ---------- */
 const tms=x=>x&&x.toMillis?x.toMillis():0;
-/* La partida programada arranca en la hora fijada, pero nunca antes de 15 s después de la última inscripción */
-const progInicio=m=>Math.max(tms(m.inicio),tms(m.cuentaIni)+CUENTA_PROG*1000);
-setInterval(()=>{
-  const el=document.getElementById('cdrev');if(!el||!mia)return;
-  const p=progMesa(),ini=p?tms(p.inicio):0,f=ini||((mia.g&&mia.g.finAt||0)+REV_VENTANA*1000),r=Math.ceil((f-Date.now())/1000);
-  el.textContent=Math.max(0,r)+'s';
-  if(r<=0&&!ini)view();
-},1000);
-async function revancha(){
-  const m=mia,mp=progMesa();
-  if(!m||!mp||busy)return;
-  if(me.saldo<mp.entrada){err='No tenés saldo suficiente para la revancha.';return view()}
-  if(mp.entrada>0&&!confirm('Se te descuenta la entrada ('+ent(mp.entrada)+') y podés cancelar la suscripción hasta que arranque. ¿Confirmás la revancha?'))return;
-  err='';busy=true;view();
-  try{
-    if(!mp.inicio){
-      /* el primero en pedir revancha fija el arranque; si otro ya lo hizo, este paso falla y se sigue igual */
-      try{await updateDoc(doc(db,'mesas','mesa-prog'),{inicio:new Date(Date.now()+REV_ESPERA*1000)})}catch(e){}
-    }
-    const b=writeBatch(db);
-    b.update(doc(db,'mesas','mesa-prog'),{uids:arrayUnion(U.uid),jugadores:arrayUnion({uid:U.uid,name:me.name}),pozo:increment(mp.entrada),listos:[],cuentaIni:serverTimestamp()});
-    if(mp.entrada>0)b.update(doc(db,'users',U.uid),{saldo:increment(-mp.entrada)});
-    await b.commit();
-    const g=m.g;
-    if(g&&g.ganador===U.uid&&g.pagado){try{await updateDoc(doc(db,'mesas',m.id),{estado:'terminada'})}catch(e){}}
-    busy=false;dejar(m.id);
-  }catch(x){fail(x)}
-}
-function revanchaHTML(m,g,u){
-  if(m.origen!=='mesa-prog'||!g.finAt)return '';
-  const mp=progMesa(),now=Date.now(),ini=mp?tms(mp.inicio):0,fin=g.finAt;
-  const abierta=now<fin+REV_VENTANA*1000,tardia=!!(mp&&ini&&ini>=fin&&ini-now<=(REV_ESPERA+5)*1000);
-  if(!abierta&&!tardia)return '<div class="card" style="padding:10px;text-align:center"><b>🏁 Partida programada finalizada</b></div>';
-  if(!mp)return '';
-  if(g.ganador===u&&!g.pagado)return '<p class="note">Cobrá tu premio para poder pedir la revancha.</p>';
-  const falta=me.saldo<mp.entrada,llena=mp.uids.length>=mp.max,seg=Math.max(0,Math.ceil(((ini||(fin+REV_VENTANA*1000))-now)/1000));
-  return `<div class="card" style="padding:10px"><b>🔁 Revancha</b><p class="note">${mp.uids.length?mp.uids.length+' confirmado'+(mp.uids.length===1?'':'s')+' · ':''}${ini?'Empieza en':'Tenés'} <b id="cdrev" class="mono gold">${seg}s</b>${ini?'':' para pedirla'}. Entrada ${ent(mp.entrada)}.</p>
-    <button class="b1" data-a="revancha" ${busy||falta||llena?'disabled':''}>${falta?'Saldo insuficiente':llena?'Cupo completo':'Pedir revancha'}</button></div>`;
-}
-let iniP=false;
-async function iniciarProg(){
-  if(iniP)return;iniP=true;
-  try{const ref=doc(db,'mesas','mesa-prog');
-    await runTransaction(db,async t=>{const d=(await t.get(ref)).data();
-      if(!d||d.estado!=='esperando'||!d.prog||!d.inicio||d.uids.length<2||progInicio(d)+1000>Date.now())return;
-      const nref=doc(collection(db,'mesas'));
-      const {cuentaIni,ultima,...resto}=d;
-      t.set(nref,{...resto,fija:false,origen:'mesa-prog',estado:'jugando',g:armarG(d),iniciada:serverTimestamp()});
-      t.update(ref,{uids:[],jugadores:[],pozo:0,listos:[],cuentaIni:serverTimestamp(),ultima:nref.id,inicio:null});
-    });
-  }catch(e){}
-  setTimeout(()=>{iniP=false},4000);
-}
-setInterval(()=>{
-  if(!U||!me)return;const p=progMesa();if(!p||!p.inicio)return;
-  const el=document.getElementById('cdp');
-  if(el){const r=Math.ceil((progInicio(p)-Date.now())/1000);el.textContent=r>0?dur(r):(p.uids.length>=2?'Empezando…':'Esperando más jugadores')}
-  if(mia||busy||!p.uids.includes(U.uid)||p.uids.length<2||progInicio(p)+1000>Date.now())return;
-  iniciarProg();
-},1000);
 let iniciando=null;
 async function autoIniciar(m){
   if(iniciando===m.id)return;iniciando=m.id;
@@ -463,26 +404,21 @@ setInterval(()=>{
 /* ---------- Alertas de sonido cuando una partida está por empezar ---------- */
 const avis={};
 setInterval(()=>{
-  if(!U||!me)return;const now=Date.now(),p=progMesa();
-  if(p&&p.inicio&&p.uids.includes(U.uid)){
-    const ini=progInicio(p),r=Math.ceil((ini-now)/1000);
-    if(r>0&&r<=60){const k='p'+ini;if(!avis[k]){avis[k]=1;sonar('alerta');vibrar()}}
-    if(r>0&&r<=5&&p.uids.length>=2){const k='pt'+ini+'|'+r;if(!avis[k]){avis[k]=1;sonar('tick')}}
-  }
+  if(!U||!me)return;
   if(mia&&mia.estado==='esperando'&&mia.uids.length>=2){
     const r=cuenta(mia),t=tms(mia.cuentaIni);
     if(r>0&&r<=5){const k='mt'+mia.id+'|'+t+'|'+r;if(!avis[k]){avis[k]=1;sonar('tick')}}
   }
 },500);
 
-/* ---------- Mesa principal: si una sola persona queda 5 minutos sin actividad, la limpia cualquier celular conectado (aunque el suyo esté apagado) y se le devuelve la entrada ---------- */
-const SOLO=300;let limpiando=false;
+/* ---------- Mesa principal: si una sola persona queda los minutos configurados en el admin (por defecto 5) sin actividad, la limpia cualquier celular conectado (aunque el suyo esté apagado) y se le devuelve la entrada ---------- */
+let limpiando=false;
 setInterval(async()=>{
   if(!U||!me||limpiando)return;
   const m=mesas.find(x=>x.id==='mesa-4'&&x.estado==='esperando'&&x.fija);
   if(!m||m.uids.length!==1)return;
   const t=tms(m.cuentaIni);
-  if(!t||Date.now()-t<(SOLO+5)*1000)return;
+  if(!t||Date.now()-t<(limMin()*60+5)*1000)return;
   const k='w|'+m.id+'|'+t;if(Date.now()-(tmo[k]||0)<20000)return;tmo[k]=Date.now();
   limpiando=true;
   try{
@@ -554,7 +490,7 @@ function juegoView(){
     const filas=R.filas.map(f=>`<div class="card" style="padding:10px"><div class="row"><b>${nom(f.uid)}${g.fuera[f.uid]?' · eliminado':''}</b><span class="mono" style="color:${f.add>0?'var(--bad)':'var(--ok)'}">${f.add>0?'+':''}${f.add} → ${f.total}</span></div>${(()=>{const d=desglose(f.mano);return `<div class="mcs">${d.grupos.map(gr=>`<span class="grp">${gr.map(mini).join('')}</span>`).join('')}</div>`+(d.sueltas.length?`<div class="mcs"><span class="note">Suman ${d.pts}:</span>${d.sueltas.map(mini).join('')}</div>`:'<div class="note">Todas combinadas</div>')})()}</div>`).join('');
     let bt='';
     if(gan){const prize=neto(m.pozo);
-      bt=`<h2>${R.chin?'¡CHINCHÓN! ':''}Ganó ${nom(gan)}</h2>`+(R.motivo?`<p class="note">${(R.quien||[]).map(nom).join(', ')} ${R.motivo==='tiempo'?'no tocó Listo a tiempo':R.motivo==='inactividad'?'estuvo inactivo y salió de la partida':'abandonó la partida'}.</p>`:'')+(g.pagado?`<button class="b1" data-a="fin">Volver al lobby</button>`:gan===u?`<button class="b1" data-a="cobrar" ${busy?'disabled':''}>Cobrar ${fmt(prize)}</button>`:`<button class="b1" data-a="volver">Volver al lobby</button>`)+revanchaHTML(m,g,u);
+      bt=`<h2>${R.chin?'¡CHINCHÓN! ':''}Ganó ${nom(gan)}</h2>`+(R.motivo?`<p class="note">${(R.quien||[]).map(nom).join(', ')} ${R.motivo==='tiempo'?'no tocó Listo a tiempo':R.motivo==='inactividad'?'estuvo inactivo y salió de la partida':'abandonó la partida'}.</p>`:'')+(g.pagado?`<button class="b1" data-a="fin">Volver al lobby</button>`:gan===u?`<button class="b1" data-a="cobrar" ${busy?'disabled':''}>Cobrar ${fmt(prize)}</button>`:`<button class="b1" data-a="volver">Volver al lobby</button>`);
     }else{const vr=g.venceReeng?Math.max(0,Math.ceil((g.venceReeng-Date.now())/1000)):0;
       const ven=vr>0?`<p class="note">${fuera?'Tenés':'Esperando un posible reenganche:'} <b id="cdre" class="mono gold">${vr}s</b>${fuera?' para reengancharte.':''}</p>`:'';
       bt=`<h2>${nom(R.cerro)} cerró la mano</h2>`+ven+(fuera?`<button class="b2" data-a="reeng" ${busy||me.saldo<(m.reeng||m.entrada)?'disabled':''}>Reengancharse ${(m.reeng||m.entrada)?'por '+fmt(m.reeng||m.entrada):'gratis'}</button>`:'')+(fuera?'':`<p class="note">Tenés <b id="cdr" class="mono gold">${Math.max(0,Math.ceil((g.venceR-Date.now())/1000))}s</b> para tocar Listo, o perdés la partida.</p>`)+`<button class="b1" data-a="sig" ${busy||fuera||(g.listosR||{})[u]?'disabled':''}>${(g.listosR||{})[u]?'Esperando a los demás':'Listo para la siguiente mano'} (${Object.keys(g.listosR||{}).length}/${g.orden.filter(x=>!g.fuera[x]).length})</button>`;}
@@ -569,15 +505,19 @@ function juegoView(){
   <div class="acts"><button class="b2" data-a="tirar" ${mi&&g.fase==='tirar'&&sel!==null&&!busy?'':'disabled'}>Descartar</button><button class="b1" data-a="cerrar" ${mi&&g.fase==='tirar'&&sel!==null&&!busy&&puedeCortar(g)&&canClose(yo,sel)?'':'disabled'}>Cerrar mano</button></div>${mi&&g.fase==='tirar'&&!puedeCortar(g)?'<p class="note" style="text-align:center">Todavía no se puede cerrar: todos deben jugar su primera carta.</p>':''}
   ${g.ganador||fuera?'':'<button class="b3" data-a="aband">Abandonar partida</button>'}${fuera&&!g.ganador?'<button class="b1" data-a="volver">Volver al lobby</button>':''}`;
 }
-let sel=null;const pref={ent:'',max:'4',lim:'100',sit:'si'};let cfg={comision:10,entradas:[500,1000,2000],turno:20,espera:40,reenganche:0,segReeng:20,whatsapp:''};
+let sel=null;const pref={ent:'',max:'4',lim:'100',sit:'si'};let cfg={comision:10,entradas:[500,1000,2000],turno:20,espera:40,reenganche:0,segReeng:20,whatsapp:'',limpieza:5};
+const limMin=()=>Math.min(60,Math.max(1,Math.floor(+cfg.limpieza||5)));
+let anuncios=[],banner=null;
 
 let elim=false,U=null,me=null,mesas=[],mia=null,unsubs=[],modo='in',err='',busy=false,vista='mesas',rk=[];
 
 onAuthStateChanged(auth,u=>{
-  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;elim=false;mesas=[];mia=null;rk=[];vista='mesas';
+  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;elim=false;mesas=[];mia=null;rk=[];vista='mesas';anuncios=[];banner=null;
   if(u){
     unsubs.push(onSnapshot(doc(db,'bloqueados',u.uid),s=>{elim=s.exists();view()}));
     unsubs.push(onSnapshot(doc(db,'config','general'),s=>{if(s.exists())cfg={...cfg,...s.data()};view()}));
+    unsubs.push(onSnapshot(doc(db,'config','anuncios'),s=>{anuncios=s.exists()&&Array.isArray(s.data().items)?s.data().items:[];view()},()=>{}));
+    unsubs.push(onSnapshot(doc(db,'config','banner'),s=>{banner=s.exists()?s.data():null;view()},()=>{}));
     unsubs.push(onSnapshot(doc(db,'users',u.uid),s=>{me=s.exists()?s.data():null;view()}));
     unsubs.push(onSnapshot(query(collection(db,'ranking'),orderBy('ganadas','desc'),limit(100)),s=>{rk=s.docs.map(d=>({id:d.id,...d.data()}));if(!mia)view()},()=>{}));
     unsubs.push(onSnapshot(query(collection(db,'mesas'),where('estado','in',['esperando','jugando'])),s=>{
@@ -600,7 +540,7 @@ function view(){
 }
 function authView(){
   const reg=modo==='up';
-  return `<h1 style="margin:0"><img class="logo g" src="logo.png" alt="Chinchón Online"></h1><p class="note" style="text-align:center">Mesa principal las 24 hs, partidas programadas y mesa de prueba gratis.</p>
+  return `<h1 style="margin:0"><img class="logo g" src="logo.png" alt="Chinchón Online"></h1><p class="note" style="text-align:center">Mesa principal las 24 hs y mesa de prueba gratis.</p>
   <div class="tabs"><button class="${reg?'':'on'}" data-a="modo" data-v="in">Entrar</button><button class="${reg?'on':''}" data-a="modo" data-v="up">Crear cuenta</button></div>
   <form class="card" id="f">
     ${reg?'<input name="nombre" placeholder="Tu nombre en la mesa" maxlength="16" required autocomplete="nickname">':''}
@@ -635,16 +575,16 @@ function pruebaHTML(){
     <button class="cta gr" data-a="bot" ${busy?'disabled':''}>PRACTICAR GRATIS ›</button></div>`:'';
 }
 function mesasHTML(){
-  return `<div class="ttl">¡Elegí tu mesa y jugá!</div><div style="text-align:center"><span class="pill"><i class="dot"></i>Salas disponibles las 24 hs</span></div>`+mesasFijasHTML()+pruebaHTML();
+  return `<div class="ttl">¡Elegí tu mesa y jugá!</div><div style="text-align:center"><span class="pill"><i class="dot"></i>Salas disponibles las 24 hs</span></div>`+mesasFijasHTML()+pruebaHTML()+bannerHTML();
 }
 function mesasFijasHTML(){
   const m=mesas.find(x=>x.id==='mesa-4'&&x.estado==='esperando'&&x.fija);
   const jug=mesas.filter(x=>x.estado==='jugando').length;
-  return principalHTML(m)+progHTML()+(jug?`<div class="liveb">🔥 <span><b class="gold">${jug}</b> partida${jug===1?'':'s'} en juego ahora</span></div>`:'');
+  return principalHTML(m)+anunciosHTML()+(jug?`<div class="liveb">🔥 <span><b class="gold">${jug}</b> partida${jug===1?'':'s'} en juego ahora</span></div>`:'');
 }
 function principalHTML(m){
   if(!m)return `<div class="card"><h2>Mesa principal</h2><p class="note">${me.admin?'Todavía no está creada. Creala desde el Panel de administrador.':'La mesa todavía no está disponible. Probá en unos minutos.'}</p></div>`;
-  const llena=m.uids.length>=m.max,falta=me.saldo<m.entrada,blq=bloqueaPrincipal();
+  const llena=m.uids.length>=m.max,falta=me.saldo<m.entrada;
   const fan=`<div class="fan" aria-hidden="true">${['copa-10','copa-12','copa-11'].map(c=>`<img src="cartas/${c}.jpg" alt="" onerror="this.onerror=null;this.src='cartas/dorso.jpg'">`).join('')}</div>`;
   return `<div class="hero"><div class="rib">★ ${esc((m.nombre||'Mesa principal').toUpperCase())}</div><span class="cnt mono">👥 ${m.uids.length}/${m.max}</span>
     <div class="hb"><div class="he"><div class="big">${ent(m.entrada)}</div><div class="sub">Entrada por jugador</div></div>
@@ -652,26 +592,18 @@ function principalHTML(m){
     <div class="elim">🏆 Eliminación: <b class="gold">${m.limite}</b> puntos</div>
     ${m.jugadores.length?`<div class="note">Sentados: ${m.jugadores.map(j=>esc(j.name)).join(', ')}</div>`:''}
     <p class="note">Después de 20 segundos con 2 o más jugadores te pedimos que confirmes: solo juegan los que confirman y el resto queda para la próxima partida. Si entra otro jugador, la cuenta vuelve a empezar.</p>
-    ${blq?'<div class="err">Estás suscripto a la partida programada y está por empezar: no podés sentarte en esta mesa ahora. Si querés jugar acá, cancelá la suscripción en la tarjeta de la partida programada.</div>':''}
-    <button class="cta" data-a="unirse" data-id="${m.id}" ${busy||llena||falta||blq?'disabled':''}>${falta?'Saldo insuficiente':llena?'Mesa llena':'JUGAR AHORA ›'}</button></div>`;
+    <button class="cta" data-a="unirse" data-id="${m.id}" ${busy||llena||falta?'disabled':''}>${falta?'Saldo insuficiente':llena?'Mesa llena':'JUGAR AHORA ›'}</button></div>`;
 }
-function progHTML(){
-  const p=progMesa();
-  if(!p||!p.inicio)return `<div class="prog off"><div class="top"><div class="cal"><b>Próx.</b><span>📅</span></div><div class="tt"><h2>PARTIDA PROGRAMADA</h2><div class="info" style="text-align:left;margin-top:4px">Por ahora no hay ninguna partida programada. Cuando el administrador programe una, te vas a poder suscribir desde acá.</div></div></div></div>`;
-  const ya=p.uids.includes(U.uid),llena=p.uids.length>=p.max,falta=me.saldo<p.entrada,cerr=p.inicio.toMillis()<=Date.now()&&p.uids.length>=2;
-  const d=p.inicio.toDate();
-  const dia=d.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long'}),hora=d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
-  const mes=d.toLocaleDateString('es-AR',{month:'short'}).replace('.','');
-  const lbl=ya?'Estás suscripto ✔':cerr?'Inscripción cerrada':llena?'Cupo completo':falta?'Saldo insuficiente':'UNIRME A LA PARTIDA';
-  return `<div class="prog"><div class="top"><div class="cal" aria-hidden="true"><b>${esc(mes)}</b><span>${d.getDate()}</span></div>
-      <div class="tt"><h2>PARTIDA PROGRAMADA</h2><div class="hr">🕒 ${esc(hora)} hs <span class="note">· ${esc(dia)}</span></div></div>
-      <div class="cn mono gold">👥 ${p.uids.length}/${p.max}</div></div>
-    <div class="mid"><div class="cd"><span class="hg" aria-hidden="true">⏳</span><div><div class="sub">Comienza en</div><div id="cdp" class="cdn"></div></div></div>
-      <div class="ep">Entrada: <b>${ent(p.entrada)}</b><br>Pozo: <span class="mono gold">${fmt(neto(p.pozo))}</span></div></div>
-    <div class="info">Se elimina a los ${p.limite} puntos${p.jugadores.length?' · Suscriptos: '+p.jugadores.map(j=>esc(j.name)).join(', '):''}</div>
-    <button class="cta" data-a="unirse" data-id="${p.id}" ${busy||ya||llena||falta||cerr?'disabled':''}>${lbl}</button>
-    ${ya&&!cerr?`<button class="b2" data-a="salirMesa" data-id="${p.id}" ${busy?'disabled':''}>Cancelar suscripción (te devolvemos la entrada)</button>`:''}
-    <div class="info">ⓘ Se juega con 2 o más participantes. Podés cancelar antes del inicio y te devolvemos la entrada.</div></div>`;
+function anunciosHTML(){
+  if(!anuncios.length)return '';
+  const l=anuncios.slice().sort((a,b)=>(b.f||0)-(a.f||0)).slice(0,10);
+  return `<div class="anu"><div class="at">📢 ANUNCIOS</div>${l.map(a=>`<div class="ai"><div>${esc(a.t||'')}</div><small>${esc(a.f?new Date(a.f).toLocaleDateString('es-AR',{day:'2-digit',month:'short'}):'')}</small></div>`).join('')}</div>`;
+}
+function bannerHTML(){
+  if(!banner||banner.activo!==true||typeof banner.img!=='string'||!/^data:image\//.test(banner.img))return '';
+  const l=/^https?:\/\//i.test(banner.link||'')?banner.link:'';
+  const im=`<img src="${esc(banner.img)}" alt="Publicidad" style="width:100%;display:block;border-radius:16px">`;
+  return `<div class="ban">${l?`<a href="${esc(l)}" target="_blank" rel="noopener noreferrer">${im}</a>`:im}</div>`;
 }
 function lobbyView(){
   const wa=cfg.whatsapp?`<a class="b1" target="_blank" rel="noopener" href="https://wa.me/${cfg.whatsapp}?text=${encodeURIComponent('Hola, quiero cargar fichas. Mi usuario: '+me.name+' (código '+U.uid.slice(0,6)+')')}">Cargar saldo por WhatsApp</a>`:'';
@@ -690,7 +622,7 @@ function salaView(){
   <div class="pozo"><span class="note">Entrada ${ent(m.entrada)}</span><div style="text-align:right"><span class="note">Pozo acumulado</span><br><b>${fmt(neto(m.pozo))}</b></div></div>
   <div class="card"><div class="row"><h2>Jugadores</h2><span class="mono gold">${js.length}/${m.max}</span></div></div>
   <div class="seats">${seats}</div>
-  <div class="card" style="text-align:center">${js.length>=2?(()=>{const e=estadoSala(m,fasePrincipal(m));return `<h2 id="cdt">${e.t}</h2><p class="note" id="cdn">${e.n}</p>`})():'<h2>Esperando jugadores…</h2><p class="note">Con 2 jugadores arranca la cuenta regresiva. Si nadie se suma en 5 minutos, te sacamos de la mesa y te devolvemos la entrada.</p>'}</div>${err?`<div class="err">${err}</div>`:''}
+  <div class="card" style="text-align:center">${js.length>=2?(()=>{const e=estadoSala(m,fasePrincipal(m));return `<h2 id="cdt">${e.t}</h2><p class="note" id="cdn">${e.n}</p>`})():'<h2>Esperando jugadores…</h2><p class="note">Con 2 jugadores arranca la cuenta regresiva. Si nadie se suma en '+limMin()+' minuto'+(limMin()===1?'':'s')+', te sacamos de la mesa y te devolvemos la entrada.</p>'}</div>${err?`<div class="err">${err}</div>`:''}
   <a class="b1" href="https://wa.me/?text=${txt}" target="_blank" rel="noopener">Invitar amigo por WhatsApp</a>
   <button class="b2" data-a="salirMesa" ${busy?'disabled':''}>Salir de la mesa (te devolvemos la entrada)</button>`;
 }
@@ -712,15 +644,8 @@ document.addEventListener('click',async e=>{
   if(a==='modo'){modo=b.dataset.v;err='';return view()}
   if(a==='vista'){vista=b.dataset.v;err='';return view()}
   if(a==='salir')return signOut(auth);
-  if(a==='revancha')return revancha();
   if(a==='snd'){sonido=!sonido;try{localStorage.setItem('snd',sonido?'1':'0')}catch(e){}if(sonido)sonar('inicio');return view()}
   if(['robar','tirar','cerrar','sig','reeng','cobrar','ready','sel','fin','aband','volver'].includes(a))return juego(a,b);
-  if(a==='unirse'){
-    const mm=mesas.find(x=>x.id===b.dataset.id);
-    if(mm&&mm.prog&&!confirm('Se te descuenta la entrada ('+ent(mm.entrada)+') y podés cancelar la suscripción hasta que arranque la partida. ¿Confirmás?'))return;
-    if(mm&&!mm.prog&&bloqueaPrincipal()){err='Estás suscripto a la partida programada y está por empezar. Si querés jugar acá, cancelá la suscripción.';return view()}
-  }
-  if(a==='salirMesa'&&b.dataset.id&&!confirm('¿Cancelar tu suscripción a la partida programada? Te devolvemos la entrada.'))return;
   err='';busy=true;view();
   try{
     const uref=doc(db,'users',U.uid),batch=writeBatch(db);
