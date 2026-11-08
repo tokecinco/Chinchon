@@ -50,19 +50,19 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 let U=null,me=null,cfg={comision:10,entradas:[500,1000,2000],turno:20,espera:40,reenganche:0,segReeng:20,whatsapp:''},us=[],mv=[],fx=[],fxOk=false,rk=[],q='',err='',ok='',unsubs=[],anu=[],anuTxt='',bn={},bnPend='',bnLink=null,bnMsg={t:'',bad:false},anMsg={t:'',bad:false};
 
 onAuthStateChanged(auth,u=>{
-  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;us=[];mv=[];fx=[];fxOk=false;rk=[];pd=[];anu=[];bn={};bnPend='';bnLink=null;
+  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;us=[];mv=[];fx=[];fxOk=false;rk=[];pd=[];md=[];anu=[];bn={};bnPend='';bnLink=null;
   if(u){
     unsubs.push(onSnapshot(doc(db,'users',u.uid),s=>{
       const was=me&&me.admin;me=s.exists()?s.data():null;
       if(me&&me.admin&&!was){
-        unsubs.push(onSnapshot(collection(db,'users'),s=>{us=s.docs.map(d=>({id:d.id,...d.data()}));lista()}));
+        unsubs.push(onSnapshot(collection(db,'users'),s=>{us=s.docs.map(d=>({id:d.id,...d.data()}));lista();ptv()}));
         unsubs.push(onSnapshot(query(collection(db,'movimientos'),orderBy('creado','desc'),limit(15)),s=>{mv=s.docs.map(d=>d.data());hist()}));
         unsubs.push(onSnapshot(doc(db,'config','general'),s=>{if(s.exists())cfg={...cfg,...s.data()};view()}));
         unsubs.push(onSnapshot(query(collection(db,'mesas'),where('estado','==','esperando')),s=>{fx=s.docs.map(d=>({id:d.id,...d.data()}));if(!fxOk){fxOk=true;view()}else estados()}));
         unsubs.push(onSnapshot(doc(db,'config','anuncios'),s=>{anu=s.exists()&&Array.isArray(s.data().items)?s.data().items:[];view()}));
         unsubs.push(onSnapshot(doc(db,'config','banner'),s=>{bn=s.exists()?s.data():{};view()}));
         unsubs.push(onSnapshot(collection(db,'ranking'),s=>{rk=s.docs.map(d=>({id:d.id,...d.data()}));rkv()}));
-        unsubs.push(()=>{if(unPart)unPart();unPart=null});subPartidas();
+        unsubs.push(()=>{if(unPart)unPart();unPart=null;if(unMov)unMov();unMov=null});subPartidas();
       }
       view();
     }));
@@ -93,7 +93,8 @@ function view(){
   ${partidasCard()}
   ${rankCard()}
   <div class="card"><h2>Jugadores</h2><div class="note" id="cont"></div><input id="q" placeholder="Buscar por nombre o código" value="${esc(q)}" aria-label="Buscar jugador"><div id="lista"></div></div>
-  <div class="card"><h2>Últimos movimientos</h2><div id="hist"></div></div>`;
+  <div class="card"><h2>Últimos movimientos</h2><div id="hist"></div></div>
+  ${partidasListaCard()}`;
   lista();hist();estados();rkv();ptv();
 }
 const FIJAS=[[4,'Mesa principal']];
@@ -178,35 +179,42 @@ async function dibujar(){
   x.fillText('JUG = jugadas · GAN = ganadas · PER = perdidas',W/2,H-80);
   return new Promise(r=>c.toBlob(r,'image/png'));
 }
-async function dibujarDia(){
-  const MAXF=100,re=pd.filter(x=>!x.prueba),l=re.slice(0,MAXF),extra=re.length-l.length;
+function datosDia(){
+  const re=pd.filter(x=>!x.prueba),np=pd.length-re.length;
   const pozo=re.reduce((s,x)=>s+(x.pozo||0),0),prem=re.reduce((s,x)=>s+(x.premio||0),0);
+  const total=us.reduce((s,u)=>s+(u.saldo||0),0);
+  const carg=md.filter(m=>m.monto>0).reduce((s,m)=>s+m.monto,0),deb=md.filter(m=>m.monto<0).reduce((s,m)=>s-m.monto,0);
+  return {re,np,pozo,prem,total,carg,deb};
+}
+async function dibujarDia(){
+  const D=datosDia();
   try{await Promise.all([document.fonts.load('800 40px "Plus Jakarta Sans"'),document.fonts.load('700 30px "JetBrains Mono"')])}catch(e){}
   const SANS='"Plus Jakarta Sans",system-ui,sans-serif',MONO='"JetBrains Mono",ui-monospace,monospace';
-  const W=1080,RH=150,TOP=470,H=TOP+Math.max(l.length,1)*RH+(extra>0?70:0)+90;
+  const W=1080,H=1060;
   const c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
   x.fillStyle='#0e1b15';x.fillRect(0,0,W,H);
   x.fillStyle='#15271e';rr(x,30,30,W-60,H-60,36);x.fill();x.strokeStyle='#22392d';x.lineWidth=3;x.stroke();
   x.textBaseline='middle';x.textAlign='center';
   const [yy,mm,dd]=diaSel.split('-').map(Number);
-  x.fillStyle='#f2c14e';x.font='800 62px '+SANS;x.fillText('📋 PARTIDAS DEL DÍA',W/2,120);
+  x.fillStyle='#f2c14e';x.font='800 62px '+SANS;x.fillText('📊 DATOS GENERALES',W/2,120);
   x.fillStyle='#8fa597';x.font='600 32px '+SANS;x.fillText(new Date(yy,mm-1,dd).toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}),W/2,195);
-  /* resumen */
-  x.fillStyle='#1a3025';rr(x,60,250,W-120,170,24);x.fill();
-  const cols=[['PARTIDAS',String(re.length),'#e8f0ea'],['POZO',fmt(pozo),'#e8f0ea'],['PREMIOS',fmt(prem),'#5fd08a'],['COMISIÓN',fmt(pozo-prem),'#f2c14e']];
-  cols.forEach((k,i)=>{const cx=60+(W-120)/8+i*(W-120)/4;x.fillStyle='#8fa597';x.font='700 24px '+SANS;x.fillText(k[0],cx,300);x.fillStyle=k[2];x.font='700 34px '+MONO;x.fillText(k[1],cx,360)});
-  const cut=(t,w)=>{if(x.measureText(t).width<=w)return t;while(t.length>1&&x.measureText(t+'…').width>w)t=t.slice(0,-1);return t+'…'};
-  if(!l.length){x.fillStyle='#8fa597';x.font='600 34px '+SANS;x.fillText('No hay partidas registradas ese día',W/2,TOP+RH/2)}
-  l.forEach((p,i)=>{
-    const y=TOP+i*RH;
-    if(i%2===0){x.fillStyle='#1a3025';rr(x,60,y,W-120,RH-10,18);x.fill()}
-    const h=p.fecha&&p.fecha.toDate?p.fecha.toDate().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):'';
-    x.textAlign='left';x.fillStyle='#e8f0ea';x.font='800 34px '+SANS;x.fillText(cut(h+' · '+(p.prueba?'🤖 ':'')+(p.mesa||'Mesa'),620),90,y+34);
-    x.textAlign='right';x.fillStyle='#f2c14e';x.font='700 34px '+MONO;x.fillText(p.prueba?'PRUEBA':fmt(p.pozo||0),W-90,y+34);
-    x.textAlign='left';x.fillStyle='#8fa597';x.font='600 26px '+SANS;x.fillText(cut('Jugaron: '+(p.jugadores||[]).join(', '),W-180),90,y+78);
-    x.fillStyle='#5fd08a';x.font='700 28px '+SANS;x.fillText(cut('🏆 Ganó '+(p.ganador||'?')+(p.prueba?'':' · premio '+fmt(p.premio||0)),W-180),90,y+116);
+  /* partidas del día */
+  x.textAlign='left';x.fillStyle='#f2c14e';x.font='800 30px '+SANS;x.fillText('PARTIDAS DEL DÍA',70,275);
+  x.fillStyle='#1a3025';rr(x,60,305,W-120,170,24);x.fill();
+  x.textAlign='center';
+  const cols=[['PARTIDAS',String(D.re.length),'#e8f0ea'],['POZO',fmt(D.pozo),'#e8f0ea'],['PREMIOS',fmt(D.prem),'#5fd08a'],['COMISIÓN',fmt(D.pozo-D.prem),'#f2c14e']];
+  cols.forEach((k,i)=>{const cx=60+(W-120)/8+i*(W-120)/4;x.fillStyle='#8fa597';x.font='700 24px '+SANS;x.fillText(k[0],cx,355);x.fillStyle=k[2];x.font='700 34px '+MONO;x.fillText(k[1],cx,415)});
+  /* saldos */
+  x.textAlign='left';x.fillStyle='#f2c14e';x.font='800 30px '+SANS;x.fillText('SALDOS',70,560);
+  const filas=[['Saldo actual de todos los usuarios',fmt(D.total),'#e8f0ea'],['Saldo cargado del día',fmt(D.carg),'#5fd08a'],['Saldo debitado del día',fmt(D.deb),'#ff7a7a']];
+  filas.forEach((f,i)=>{
+    const y=595+i*130;
+    x.fillStyle='#1a3025';rr(x,60,y,W-120,110,24);x.fill();
+    x.textAlign='left';x.fillStyle='#e8f0ea';x.font='700 30px '+SANS;x.fillText(f[0],90,y+55);
+    x.textAlign='right';x.fillStyle=f[2];x.font='700 38px '+MONO;x.fillText(f[1],W-90,y+55);
   });
-  if(extra>0){x.textAlign='center';x.fillStyle='#8fa597';x.font='600 26px '+SANS;x.fillText('… y '+extra+' partida'+(extra===1?'':'s')+' más (se ven en el panel)',W/2,TOP+l.length*RH+30)}
+  x.textAlign='center';x.fillStyle='#8fa597';x.font='600 24px '+SANS;
+  x.fillText('Saldo cargado y debitado = acreditaciones y débitos hechos desde el admin',W/2,H-85);
   return new Promise(r=>c.toBlob(r,'image/png'));
 }
 function pruebaCard(){
@@ -311,13 +319,12 @@ async function accion(a,b){
   }
   if(a==='prueba'){b.disabled=true;try{await setDoc(doc(db,'config','general'),{prueba:!cfg.prueba},{merge:true})}catch(x){alert('No se pudo cambiar.')}b.disabled=false;return}
   if(a==='pngdia'||a==='sharedia'){
-    if(!pd.length){alert('No hay partidas registradas ese día.');return}
     b.disabled=true;
     try{
-      const blob=await dibujarDia(),nom='partidas-chinchon-'+diaSel+'.png';
+      const blob=await dibujarDia(),nom='datos-generales-chinchon-'+diaSel+'.png';
       if(a==='sharedia'){
         const f=new File([blob],nom,{type:'image/png'});
-        if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:'Partidas del día'});
+        if(navigator.canShare&&navigator.canShare({files:[f]}))await navigator.share({files:[f],title:'Datos generales'});
         else alert('Este navegador no puede compartir imágenes. Usá el botón Descargar.');
       }else{
         const url=URL.createObjectURL(blob),l=document.createElement('a');
@@ -367,7 +374,7 @@ async function accion(a,b){
   }
 }
 /* ---------- Registro de partidas del día ---------- */
-let pd=[],unPart=null;
+let pd=[],unPart=null,md=[],unMov=null;
 const hoyStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 let diaSel=hoyStr();
 function subPartidas(){
@@ -376,19 +383,28 @@ function subPartidas(){
   unPart=onSnapshot(query(collection(db,'partidas'),where('fecha','>=',a),where('fecha','<',b),orderBy('fecha','desc'),limit(300)),
     s=>{pd=s.docs.map(x=>({id:x.id,...x.data({serverTimestamps:'estimate'})}));ptv()},
     ()=>{pd=[];ptv()});
+  if(unMov)unMov();
+  unMov=onSnapshot(query(collection(db,'movimientos'),where('creado','>=',a),where('creado','<',b),orderBy('creado','desc'),limit(500)),
+    s=>{md=s.docs.map(x=>x.data({serverTimestamps:'estimate'}));ptv()},
+    ()=>{md=[];ptv()});
 }
 function partidasCard(){
-  return `<div class="card"><h2>Partidas del día</h2>
+  return `<div class="card"><h2>Datos generales</h2>
   <label>Día<input id="dia" type="date" value="${diaSel}" max="${hoyStr()}"></label>
-  <div class="note" id="ptn"></div><div id="ptl"></div>
-  <button class="b1" data-a="pngdia">Descargar resultados del día (PNG)</button>${navigator.canShare?'<button class="b2" data-a="sharedia">Compartir por WhatsApp</button>':''}</div>`;
+  <div id="ptn"></div>
+  <button class="b1" data-a="pngdia">Descargar datos generales (PNG)</button>${navigator.canShare?'<button class="b2" data-a="sharedia">Compartir por WhatsApp</button>':''}</div>`;
+}
+function partidasListaCard(){
+  return `<div class="card"><h2>Partidas del día</h2><p class="note">Del día elegido en Datos generales.</p><div id="ptl"></div></div>`;
 }
 function ptv(){
-  const el=document.getElementById('ptl'),nt=document.getElementById('ptn');if(!el)return;
-  const re=pd.filter(x=>!x.prueba),np=pd.length-re.length;
-  const pozo=re.reduce((s,x)=>s+(x.pozo||0),0),prem=re.reduce((s,x)=>s+(x.premio||0),0);
-  nt.innerHTML=pd.length?`<b class="mono gold">${re.length}</b> partida${re.length===1?'':'s'} · pozo total <b class="mono">${fmt(pozo)}</b> · premios <b class="mono">${fmt(prem)}</b> · comisión de la casa <b class="mono gold">${fmt(pozo-prem)}</b>${np?` · 🤖 ${np} de prueba (no suman)`:''}`:'';
-  el.innerHTML=pd.length?pd.map(x=>{
+  const D=datosDia(),nt=document.getElementById('ptn'),el=document.getElementById('ptl');
+  if(nt){
+    const fila=(t,v,c)=>`<div class="row"><span>${t}</span><b class="mono" ${c?`style="color:${c}"`:''}>${v}</b></div>`;
+    nt.innerHTML=fila('Partidas jugadas',D.re.length)+fila('Pozo total',fmt(D.pozo))+fila('Premios',fmt(D.prem),'var(--ok)')+fila('Comisión de la casa',fmt(D.pozo-D.prem),'var(--gold)')+(D.np?`<p class="note">🤖 ${D.np} de prueba (no suman)</p>`:'')
+      +fila('Saldo actual de todos los usuarios',fmt(D.total))+fila('Saldo cargado del día',fmt(D.carg),'var(--ok)')+fila('Saldo debitado del día',fmt(D.deb),'var(--bad)');
+  }
+  if(el)el.innerHTML=pd.length?pd.map(x=>{
     const h=x.fecha&&x.fecha.toDate?x.fecha.toDate().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):'';
     return `<div class="u"><div class="row"><b>${h} · ${x.prueba?'🤖 ':''}${esc(x.mesa||'Mesa')}</b><span class="mono gold">${x.prueba?'PRUEBA':fmt(x.pozo||0)}</span></div>
     <span class="note">Jugaron: ${(x.jugadores||[]).map(esc).join(', ')}</span>
