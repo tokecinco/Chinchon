@@ -50,7 +50,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 let U=null,me=null,cfg={comision:10,entradas:[500,1000,2000],turno:20,espera:40,reenganche:0,segReeng:20,whatsapp:''},us=[],mv=[],fx=[],fxOk=false,rk=[],q='',err='',ok='',unsubs=[],anu=[],anuTxt='',bn={},bnPend='',bnLink=null,bnMsg={t:'',bad:false},anMsg={t:'',bad:false};
 
 onAuthStateChanged(auth,u=>{
-  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;us=[];mv=[];fx=[];fxOk=false;rk=[];pd=[];md=[];anu=[];bn={};bnPend='';bnLink=null;
+  unsubs.forEach(f=>f());unsubs=[];U=u;me=null;us=[];mv=[];fx=[];fxOk=false;rk=[];pd=[];md=[];pl=[];anu=[];bn={};bnPend='';bnLink=null;
   if(u){
     unsubs.push(onSnapshot(doc(db,'users',u.uid),s=>{
       const was=me&&me.admin;me=s.exists()?s.data():null;
@@ -62,7 +62,7 @@ onAuthStateChanged(auth,u=>{
         unsubs.push(onSnapshot(doc(db,'config','anuncios'),s=>{anu=s.exists()&&Array.isArray(s.data().items)?s.data().items:[];view()}));
         unsubs.push(onSnapshot(doc(db,'config','banner'),s=>{bn=s.exists()?s.data():{};view()}));
         unsubs.push(onSnapshot(collection(db,'ranking'),s=>{rk=s.docs.map(d=>({id:d.id,...d.data()}));rkv()}));
-        unsubs.push(()=>{if(unPart)unPart();unPart=null;if(unMov)unMov();unMov=null});subPartidas();
+        unsubs.push(()=>{if(unPart)unPart();unPart=null;if(unMov)unMov();unMov=null;if(unLis)unLis();unLis=null});subPartidas();subLista();
       }
       view();
     }));
@@ -374,9 +374,9 @@ async function accion(a,b){
   }
 }
 /* ---------- Registro de partidas del día ---------- */
-let pd=[],unPart=null,md=[],unMov=null;
+let pd=[],unPart=null,md=[],unMov=null,pl=[],unLis=null;
 const hoyStr=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
-let diaSel=hoyStr();
+let diaSel=hoyStr(),diaLis=hoyStr();
 function subPartidas(){
   if(unPart)unPart();
   const [y,m,d]=diaSel.split('-').map(Number),a=new Date(y,m-1,d),b=new Date(y,m-1,d+1);
@@ -388,6 +388,13 @@ function subPartidas(){
     s=>{md=s.docs.map(x=>x.data({serverTimestamps:'estimate'}));ptv()},
     ()=>{md=[];ptv()});
 }
+function subLista(){
+  if(unLis)unLis();
+  const [y,m,d]=diaLis.split('-').map(Number),a=new Date(y,m-1,d),b=new Date(y,m-1,d+1);
+  unLis=onSnapshot(query(collection(db,'partidas'),where('fecha','>=',a),where('fecha','<',b),orderBy('fecha','desc'),limit(300)),
+    s=>{pl=s.docs.map(x=>({id:x.id,...x.data({serverTimestamps:'estimate'})}));ptv()},
+    ()=>{pl=[];ptv()});
+}
 function partidasCard(){
   return `<div class="card"><h2>Datos generales</h2>
   <label>Día<input id="dia" type="date" value="${diaSel}" max="${hoyStr()}"></label>
@@ -395,7 +402,7 @@ function partidasCard(){
   <button class="b1" data-a="pngdia">Descargar datos generales (PNG)</button>${navigator.canShare?'<button class="b2" data-a="sharedia">Compartir por WhatsApp</button>':''}</div>`;
 }
 function partidasListaCard(){
-  return `<div class="card"><h2>Partidas del día</h2><p class="note">Del día elegido en Datos generales.</p><div id="ptl"></div></div>`;
+  return `<div class="card"><h2>Partidas del día</h2><label>Día<input id="dia2" type="date" value="${diaLis}" max="${hoyStr()}"></label><div id="ptl"></div></div>`;
 }
 function ptv(){
   const D=datosDia(),nt=document.getElementById('ptn'),el=document.getElementById('ptl');
@@ -404,13 +411,13 @@ function ptv(){
     nt.innerHTML=fila('Partidas jugadas',D.re.length)+fila('Pozo total',fmt(D.pozo))+fila('Premios',fmt(D.prem),'var(--ok)')+fila('Comisión de la casa',fmt(D.pozo-D.prem),'var(--gold)')+(D.np?`<p class="note">🤖 ${D.np} de prueba (no suman)</p>`:'')
       +fila('Saldo actual de todos los usuarios',fmt(D.total))+fila('Saldo cargado del día',fmt(D.carg),'var(--ok)')+fila('Saldo debitado del día',fmt(D.deb),'var(--bad)');
   }
-  if(el)el.innerHTML=pd.length?pd.map(x=>{
+  if(el)el.innerHTML=pl.length?pl.map(x=>{
     const h=x.fecha&&x.fecha.toDate?x.fecha.toDate().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}):'';
     return `<div class="u"><div class="row"><b>${h} · ${x.prueba?'🤖 ':''}${esc(x.mesa||'Mesa')}</b><span class="mono gold">${x.prueba?'PRUEBA':fmt(x.pozo||0)}</span></div>
     <span class="note">Jugaron: ${(x.jugadores||[]).map(esc).join(', ')}</span>
     <span class="note">🏆 Ganó ${esc(x.ganador||'?')}${x.prueba?'':' · premio '+fmt(x.premio||0)}</span></div>`}).join(''):'<p class="note">No hay partidas registradas ese día.</p>';
 }
-document.addEventListener('change',e=>{if(e.target.id==='dia'&&e.target.value){diaSel=e.target.value;subPartidas()}});
+document.addEventListener('change',e=>{if(e.target.id==='dia'&&e.target.value){diaSel=e.target.value;subPartidas()}if(e.target.id==='dia2'&&e.target.value){diaLis=e.target.value;subLista()}});
 function lista(){
   const el=document.getElementById('lista');if(!el)return;
   const t=q.trim().toLowerCase();
