@@ -99,10 +99,8 @@ a.b1{text-decoration:none;text-align:center;display:block;border-radius:14px;pad
 .prb .tx{font-size:13px;color:var(--ink)}.prb .tx small{display:block;color:var(--mute);font-size:12px;margin-top:2px}
 .prb .cta{grid-column:1/3}
 @media (prefers-reduced-motion:reduce){.prog .cdn{animation:none}}
-.anu{background:#15271e;border:1px solid #2f6b45;border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
-.anu .at{font-weight:800;font-size:14px;color:var(--gold);letter-spacing:.4px}
-.anu .ai{border-top:1px solid var(--line);padding-top:8px;font-size:14px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere}
-.anu .ai:first-of-type{border-top:0;padding-top:0}.anu .ai small{display:block;color:var(--mute);font-size:11px;margin-top:2px}
+.anu{display:flex;flex-direction:column;gap:8px}
+.anu .ai{text-align:center;font-size:clamp(17px,5vw,22px);font-weight:800;font-style:italic;line-height:1.15;white-space:pre-wrap;overflow-wrap:anywhere}
 .ban{margin-top:4px}.ban a{display:block}
 </style>
 </head>
@@ -597,7 +595,7 @@ function principalHTML(m){
 function anunciosHTML(){
   if(!anuncios.length)return '';
   const l=anuncios.slice().sort((a,b)=>(b.f||0)-(a.f||0)).slice(0,10);
-  return `<div class="anu"><div class="at">📢 ANUNCIOS</div>${l.map(a=>`<div class="ai"><div>${esc(a.t||'')}</div><small>${esc(a.f?new Date(a.f).toLocaleDateString('es-AR',{day:'2-digit',month:'short'}):'')}</small></div>`).join('')}</div>`;
+  return `<div class="anu">${l.map(a=>`<div class="ai">${esc(a.t||'')}</div>`).join('')}</div>`;
 }
 function bannerHTML(){
   if(!banner||banner.activo!==true||typeof banner.img!=='string'||!/^data:image\//.test(banner.img))return '';
